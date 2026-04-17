@@ -1,5 +1,5 @@
-// Numbered apple entity — P2.
-// Procedural mesh (red sphere + number sprite) — assets/models TBD in later phases.
+// Numbered apple entity. Phases: 'held' (attached to right hand), 'falling' (gravity),
+// 'resting' (on a plane), 'dead' (fell out of world). Value is 1~9, rendered as a sprite.
 import * as THREE from 'three';
 
 const APPLE_RADIUS = 0.04;
@@ -25,7 +25,6 @@ function makeNumberTexture(value) {
 }
 
 export function createApple(value, worldPosition) {
-  // Slight hue jitter so a field of apples doesn't look uniform.
   const hue = (0.98 + (Math.random() - 0.5) * 0.04) % 1;
   const color = new THREE.Color().setHSL(hue, 0.78, 0.42);
 
@@ -45,45 +44,18 @@ export function createApple(value, worldPosition) {
   const group = new THREE.Group();
   group.add(body, label);
   group.position.copy(worldPosition);
-  group.userData.value = value;
 
-  function applyVisual() {
-    if (apple.selected) {
-      body.material.emissive.setHex(0xffd84a);
-      body.material.emissiveIntensity = 0.9;
-      group.scale.setScalar(1.25);
-    } else if (apple.gazed) {
-      body.material.emissive.setHex(0xffffff);
-      body.material.emissiveIntensity = 0.35;
-      group.scale.setScalar(1.08);
-    } else {
-      body.material.emissive.setHex(0x000000);
-      body.material.emissiveIntensity = 0;
-      group.scale.setScalar(1.0);
-    }
-  }
-
-  const apple = {
+  return {
     value,
     mesh: group,
-    selected: false,
-    gazed: false,
-    setSelected(sel) {
-      if (apple.selected === sel) return;
-      apple.selected = sel;
-      applyVisual();
-    },
-    setGazed(g) {
-      if (apple.gazed === g) return;
-      apple.gazed = g;
-      applyVisual();
-    },
+    velocity: new THREE.Vector3(),
+    phase: 'held',        // 'held' | 'falling' | 'resting' | 'dead'
+    planeId: null,
+    radius: APPLE_RADIUS,
     dispose() {
-      if (body.geometry !== sphereGeom) body.geometry.dispose();
       body.material.dispose();
       tex.dispose();
       label.material.dispose();
     },
   };
-  return apple;
 }

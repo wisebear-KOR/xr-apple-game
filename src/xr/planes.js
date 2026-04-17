@@ -4,14 +4,15 @@
 
 import * as THREE from 'three';
 
-const COLORS = {
-  horizontal: 0x4aa3ff, // floor, desk, seat
-  vertical:   0xff7a4a, // walls
+const STATE_COLORS = {
+  idle:   { h: 0x4aa3ff, v: 0xff7a4a },
+  active: { h: 0x7dff9a, v: 0x7dff9a },
+  locked: { h: 0x555555, v: 0x555555 },
 };
 
 function buildPlaneMeshes(plane) {
   const orient = plane.orientation === 'vertical' ? 'vertical' : 'horizontal';
-  const color = COLORS[orient];
+  const color = STATE_COLORS.idle[orient === 'vertical' ? 'v' : 'h'];
 
   // plane.polygon is a closed loop of DOMPointReadOnly in plane-local space (XZ, y≈0).
   const pts = plane.polygon;
@@ -46,7 +47,18 @@ function buildPlaneMeshes(plane) {
   const group = new THREE.Group();
   group.add(fill, outline);
   group.userData.orient = orient;
+  group.userData.fill = fill;
+  group.userData.outline = outline;
   return group;
+}
+
+function applyStateColor(entry, state) {
+  const key = entry.group.userData.orient === 'vertical' ? 'v' : 'h';
+  const color = STATE_COLORS[state][key];
+  entry.group.userData.fill.material.color.setHex(color);
+  entry.group.userData.outline.material.color.setHex(color);
+  entry.group.userData.fill.material.opacity = state === 'active' ? 0.28 : state === 'locked' ? 0.35 : 0.15;
+  entry.state = state;
 }
 
 export function createPlaneTracker(scene, { debug = false } = {}) {
@@ -81,8 +93,10 @@ export function createPlaneTracker(scene, { debug = false } = {}) {
         if (entry) root.remove(entry.group);
         const group = buildPlaneMeshes(plane);
         root.add(group);
-        entry = { group, lastChangedTime: plane.lastChangedTime, id: prevId ?? nextId++ };
+        const prevState = entry?.state ?? 'idle';
+        entry = { group, lastChangedTime: plane.lastChangedTime, id: prevId ?? nextId++, state: 'idle' };
         cache.set(plane, entry);
+        applyStateColor(entry, prevState);
       }
 
       const pose = frame.getPose(plane.planeSpace, refSpace);
@@ -124,10 +138,36 @@ export function createPlaneTracker(scene, { debug = false } = {}) {
         polygon: plane.polygon,
         orient: entry.group.userData.orient,
         matrix: entry.group.matrix.elements,
+        state: entry.state,
       });
     }
     return out;
   }
 
-  return { update, count, list, root };
+  // Horizontal fill meshes for apple-vs-plane raycasting. Each entry carries the
+  // stable id so physics can attribute a rest hit back to a plane state.
+  function horizontalFills() {
+    const out = [];
+    for (const [, entry] of cache) {
+      if (!entry.group.visible) continue;
+      if (entry.group.userData.orient !== 'horizontal') continue;
+      const fill = entry.group.userData.fill;
+      fill.userData.planeId = entry.id;
+      out.push({ id: entry.id, mesh: fill });
+    }
+    return out;
+  }
+
+  function setState(id, state) {
+    for (const [, entry] of cache) {
+      if (entry.id === id) { applyStateColor(entry, state); return true; }
+    }
+    return false;
+  }
+
+  function resetStates() {
+    for (const [, entry] of cache) applyStateColor(entry, 'idle');
+  }
+
+  return { update, count, list, root, horizontalFills, setState, resetStates };
 }

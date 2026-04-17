@@ -2,6 +2,7 @@
 *.log
 .vscode/
 .idea/
+.claude/
 node_modules/
 dist/
 .env
