@@ -5,8 +5,10 @@
 import * as THREE from 'three';
 import { createApple } from './apple.js';
 
-const APPLE_OFFSET = 0.04; // 4cm above plane surface
-const MAX_PIP_TRIES = 32;
+const APPLE_OFFSET = 0.04;    // 4cm above plane surface
+const MIN_SPACING = 0.075;    // 7.5cm min gap between apple centers (radius is 4cm)
+const MIN_SPACING_SQ = MIN_SPACING * MIN_SPACING;
+const MAX_PIP_TRIES = 48;
 
 function polygonArea(poly) {
   let a = 0;
@@ -53,31 +55,47 @@ function sampleInPolygon(poly) {
 }
 
 // planeList: [{ polygon, orient, matrix }] — matrix is 16-element plane→world.
+// density: target apples per square meter of plane surface. Capped per plane by
+// how many points we can place while honoring MIN_SPACING, so tiny planes don't
+// get hundreds of overlapping apples.
 export function spawnApplesOnPlanes(planeList, opts = {}) {
-  const { target = 30, minPerPlane = 2, maxPerPlane = 10 } = opts;
+  const { density = 80, hardCapPerPlane = 160, hardCapTotal = 400 } = opts;
   const apples = [];
   if (!planeList.length) return apples;
-
-  const areas = planeList.map((p) => polygonArea(p.polygon));
-  const totalArea = areas.reduce((s, a) => s + a, 0);
 
   const tmpLocal = new THREE.Vector3();
   const worldMat = new THREE.Matrix4();
 
-  for (let i = 0; i < planeList.length; i++) {
-    const entry = planeList[i];
+  for (const entry of planeList) {
     if (entry.polygon.length < 3) continue;
+    if (apples.length >= hardCapTotal) break;
 
-    const share = totalArea > 0 ? areas[i] / totalArea : 1 / planeList.length;
-    const n = Math.min(maxPerPlane, Math.max(minPerPlane, Math.round(target * share)));
+    const area = polygonArea(entry.polygon);
+    const want = Math.min(hardCapPerPlane, Math.max(2, Math.round(area * density)));
 
     worldMat.fromArray(entry.matrix);
 
-    for (let k = 0; k < n; k++) {
+    // Track placed positions in plane-local XZ to enforce MIN_SPACING.
+    const placed = [];
+    let attempts = 0;
+    const maxAttempts = want * 8;
+
+    while (placed.length < want && attempts < maxAttempts && apples.length < hardCapTotal) {
+      attempts++;
       const { x, z } = sampleInPolygon(entry.polygon);
+      let clash = false;
+      for (const p of placed) {
+        const dx = p.x - x, dz = p.z - z;
+        if (dx * dx + dz * dz < MIN_SPACING_SQ) { clash = true; break; }
+      }
+      if (clash) continue;
+      placed.push({ x, z });
+
       tmpLocal.set(x, APPLE_OFFSET, z).applyMatrix4(worldMat);
       const value = 1 + Math.floor(Math.random() * 9);
-      apples.push(createApple(value, tmpLocal));
+      const apple = createApple(value, tmpLocal);
+      apple.planeId = entry.id;
+      apples.push(apple);
     }
   }
   return apples;

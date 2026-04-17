@@ -50,12 +50,15 @@ function buildPlaneMeshes(plane) {
 }
 
 export function createPlaneTracker(scene, { debug = false } = {}) {
-  // planeId → { group, lastChangedTime }
+  // XRPlane → { group, lastChangedTime, id }. id is a stable integer we hand out
+  // so downstream systems (apples) can tag which plane they belong to without
+  // holding onto the XRPlane object (which can get invalidated between sessions).
   const cache = new Map();
   const root = new THREE.Group();
   root.name = 'PlaneTracker';
   scene.add(root);
 
+  let nextId = 1;
   let warnedUnsupported = false;
 
   function update(frame, refSpace) {
@@ -74,10 +77,11 @@ export function createPlaneTracker(scene, { debug = false } = {}) {
       let entry = cache.get(plane);
 
       if (!entry || entry.lastChangedTime < plane.lastChangedTime) {
+        const prevId = entry?.id;
         if (entry) root.remove(entry.group);
         const group = buildPlaneMeshes(plane);
         root.add(group);
-        entry = { group, lastChangedTime: plane.lastChangedTime };
+        entry = { group, lastChangedTime: plane.lastChangedTime, id: prevId ?? nextId++ };
         cache.set(plane, entry);
       }
 
@@ -116,6 +120,7 @@ export function createPlaneTracker(scene, { debug = false } = {}) {
     for (const [plane, entry] of cache) {
       if (!entry.group.visible) continue;
       out.push({
+        id: entry.id,
         polygon: plane.polygon,
         orient: entry.group.userData.orient,
         matrix: entry.group.matrix.elements,
