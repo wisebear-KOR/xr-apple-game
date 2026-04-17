@@ -47,15 +47,43 @@ export function createApple(value, worldPosition) {
   group.position.copy(worldPosition);
   group.userData.value = value;
 
-  return {
+  function applyVisual() {
+    if (apple.selected) {
+      body.material.emissive.setHex(0xffd84a);
+      body.material.emissiveIntensity = 0.9;
+      group.scale.setScalar(1.25);
+    } else if (apple.gazed) {
+      body.material.emissive.setHex(0xffffff);
+      body.material.emissiveIntensity = 0.35;
+      group.scale.setScalar(1.08);
+    } else {
+      body.material.emissive.setHex(0x000000);
+      body.material.emissiveIntensity = 0;
+      group.scale.setScalar(1.0);
+    }
+  }
+
+  const apple = {
     value,
     mesh: group,
     selected: false,
+    gazed: false,
+    setSelected(sel) {
+      if (apple.selected === sel) return;
+      apple.selected = sel;
+      applyVisual();
+    },
+    setGazed(g) {
+      if (apple.gazed === g) return;
+      apple.gazed = g;
+      applyVisual();
+    },
     dispose() {
-      body.geometry === sphereGeom || body.geometry.dispose();
+      if (body.geometry !== sphereGeom) body.geometry.dispose();
       body.material.dispose();
       tex.dispose();
       label.material.dispose();
     },
   };
+  return apple;
 }
